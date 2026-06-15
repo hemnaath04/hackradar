@@ -1,0 +1,48 @@
+// HackRadar schema — aggregated hackathons from multiple sources.
+// SQLite for local dev; swap `provider` to "postgresql" + DATABASE_URL to deploy.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Hackathon {
+  id        String   @id @default(cuid())
+  // Stable dedupe key derived from source + source id (or normalized title+url).
+  dedupeKey String   @unique
+
+  title       String
+  url         String
+  description String?
+  imageUrl    String?
+
+  source   String // "devpost" | "mlh" | "eventbrite" | ...
+  sourceId String?
+
+  // Free-text location as reported by the source, e.g. "Boston, MA" or "Online".
+  location String?
+
+  // Derived tags for fast filtering.
+  isOnline Boolean @default(false)
+  isBoston Boolean @default(false)
+  isUsa    Boolean @default(false)
+
+  startDate    DateTime?
+  endDate      DateTime?
+  datesText    String? // human label, e.g. "May 19 - Aug 17, 2026"
+  prizeText    String?
+  participants Int? // registrations / attendees if known
+  themes       String? // comma-separated themes/tags
+  openState    String? // "open" | "upcoming" | "ended"
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([startDate])
+  @@index([isBoston])
+  @@index([isOnline])
+}
