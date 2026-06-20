@@ -1,65 +1,156 @@
-import Image from "next/image";
+import { getHackathons, getStats, type FilterKey } from "@/lib/query";
+import { HackathonCard } from "@/app/components/HackathonCard";
+import type { Hackathon } from "@/app/generated/prisma/client";
 
-export default function Home() {
+// Always read the DB live — the listing changes whenever the agent re-scrapes.
+export const dynamic = "force-dynamic";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "boston", label: "Boston" },
+  { key: "online", label: "Online" },
+  { key: "usa", label: "USA" },
+];
+
+function monthKey(d: Date | null): string {
+  if (!d) return "Dates TBA";
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function groupByMonth(items: Hackathon[]) {
+  const groups = new Map<string, Hackathon[]>();
+  for (const h of items) {
+    const k = monthKey(h.startDate);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(h);
+  }
+  return [...groups.entries()];
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string; q?: string }>;
+}) {
+  const sp = await searchParams;
+  const filter = (FILTERS.find((f) => f.key === sp.filter)?.key ??
+    "all") as FilterKey;
+  const q = sp.q ?? "";
+
+  const [items, stats] = await Promise.all([
+    getHackathons({ filter, q }),
+    getStats(),
+  ]);
+  const groups = groupByMonth(items);
+
+  const hrefFor = (key: FilterKey) => {
+    const p = new URLSearchParams();
+    if (key !== "all") p.set("filter", key);
+    if (q) p.set("q", q);
+    const s = p.toString();
+    return s ? `/?${s}` : "/";
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20">
+      {/* Header */}
+      <header className="hero-glow -mx-4 px-4 pb-8 pt-14 text-center">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          Updated daily by an agent
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+          Hack<span className="text-accent">Radar</span>
+        </h1>
+        <p className="mx-auto mt-3 max-w-md text-muted">
+          Every hackathon in <span className="text-foreground">Boston</span> and{" "}
+          <span className="text-foreground">online across the USA</span> — scraped
+          daily from Devpost, MLH and more.
+        </p>
+
+        {/* Stats */}
+        <div className="mt-6 flex items-center justify-center gap-6 text-sm">
+          <Stat n={stats.total} label="tracked" />
+          <Stat n={stats.boston} label="in Boston" />
+          <Stat n={stats.online} label="online" />
+        </div>
+        {stats.lastUpdated && (
+          <p className="mt-3 text-xs text-muted">
+            Last sync {stats.lastUpdated.toLocaleString("en-US")}
           </p>
+        )}
+      </header>
+
+      {/* Search */}
+      <form action="/" method="get" className="mb-4">
+        {filter !== "all" && (
+          <input type="hidden" name="filter" value={filter} />
+        )}
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="Search by name, location or theme…"
+          className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm outline-none placeholder:text-muted focus:border-accent"
+        />
+      </form>
+
+      {/* Filter pills */}
+      <div className="mb-8 flex flex-wrap gap-2">
+        {FILTERS.map((f) => {
+          const active = f.key === filter;
+          return (
+            <a
+              key={f.key}
+              href={hrefFor(f.key)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                active
+                  ? "bg-accent text-white"
+                  : "border border-border bg-surface text-muted hover:text-foreground"
+              }`}
+            >
+              {f.label}
+            </a>
+          );
+        })}
+      </div>
+
+      {/* Results */}
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-border bg-surface p-10 text-center text-muted">
+          No hackathons match. Try a different filter or run{" "}
+          <code className="text-foreground">npm run scrape</code>.
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      ) : (
+        <div className="space-y-10">
+          {groups.map(([month, list]) => (
+            <section key={month}>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
+                {month}
+              </h2>
+              <div className="space-y-3">
+                {list.map((h) => (
+                  <HackathonCard key={h.id} h={h} />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
-      </main>
+      )}
+
+      <footer className="mt-16 border-t border-border pt-6 text-center text-xs text-muted">
+        HackRadar · sources: Devpost, MLH, Eventbrite, Meetup, Luma · built as a
+        daily aggregation agent
+      </footer>
+    </main>
+  );
+}
+
+function Stat({ n, label }: { n: number; label: string }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-xl font-bold text-foreground">{n}</span>
+      <span className="text-muted">{label}</span>
     </div>
   );
 }

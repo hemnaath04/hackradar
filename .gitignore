@@ -46,3 +46,8 @@ next-env.d.ts
 CLAUDE.md
 AGENTS.md
 .claude/
+
+# Local data + logs (never push)
+dev.db
+prisma/dev.db
+/logs
